@@ -17,6 +17,8 @@ pub enum Error<E> {
     Bus(E),
     /// Checksum mismatch.
     Checksum,
+    /// IO
+    IO(E)
 }
 
 /// Resolution of temperature
@@ -92,15 +94,14 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
 
     /// Init with default config
     pub fn init(& mut self) -> Result<(), E>{
-        self.set_config(self.config).unwrap_or_default();
-        Ok(())
+        self.set_config(self.config)
     }
 
     /// Soft resets the sensor.
     pub fn reset(&mut self) -> Result<(), E> {
         // Send soft reset command
         let bytes:[u8;2] = ConfigBitFlags::RST.to_be_bytes();
-        self.i2c.write(I2C_ADDRESS, &[Register::CONFIGURATION, bytes[0]]).unwrap_or_default();
+        self.i2c.write(I2C_ADDRESS, &[Register::CONFIGURATION, bytes[0]])?;
 
         self.delay.delay_ms(10);
 
@@ -110,26 +111,24 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
     /// Set temperature resolution
     pub fn set_t_resolution(& mut self, resolution: TResolution) -> Result<(), E> {
         match resolution {
-            TResolution::_11 => self.set_config(self.config | ConfigBitFlags::T_MODE).unwrap_or_default(),
-            TResolution::_14 => self.set_config(self.config & !ConfigBitFlags::T_MODE).unwrap_or_default(),
+            TResolution::_11 => self.set_config(self.config | ConfigBitFlags::T_MODE),
+            TResolution::_14 => self.set_config(self.config & !ConfigBitFlags::T_MODE),
         }
-        Ok(())
     }
 
     /// Set humidity resolution
     pub fn set_h_resolution(& mut self, resolution: HResolution) -> Result<(), E> {
         match resolution {
-            HResolution::_8 => self.set_config(self.config & !ConfigBitFlags::H_MODE8 | ConfigBitFlags::H_MODE9).unwrap_or_default(),
-            HResolution::_11 => self.set_config(self.config | ConfigBitFlags::H_MODE8 & !ConfigBitFlags::H_MODE9).unwrap_or_default(),
-            HResolution::_14 => self.set_config(self.config & !ConfigBitFlags::H_MODE8 & !ConfigBitFlags::H_MODE9).unwrap_or_default(),
+            HResolution::_8 => self.set_config(self.config & !ConfigBitFlags::H_MODE8 | ConfigBitFlags::H_MODE9),
+            HResolution::_11 => self.set_config(self.config | ConfigBitFlags::H_MODE8 & !ConfigBitFlags::H_MODE9),
+            HResolution::_14 => self.set_config(self.config & !ConfigBitFlags::H_MODE8 & !ConfigBitFlags::H_MODE9),
         }
-        Ok(())
     }
 
     /// Read config from register
     pub fn read_config(& mut self) -> Result<u16, E>{
         let mut current_config:[u8;2] = [0,0];
-        let result = self.i2c.write_read(I2C_ADDRESS, &[Register::CONFIGURATION], &mut current_config).unwrap_or_default();
+        self.i2c.write_read(I2C_ADDRESS, &[Register::CONFIGURATION], &mut current_config)?;
         
         Ok(u16::from_be_bytes(current_config))
     }
@@ -138,22 +137,24 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
     pub fn set_config(& mut self, bits:u16) -> Result<(), E> {
         self.config = bits;
         let conf_u8: [u8;2] = self.config.to_be_bytes();
-        self.i2c.write(I2C_ADDRESS, &[Register::CONFIGURATION, conf_u8[0]]).unwrap_or_default();
+        self.i2c.write(I2C_ADDRESS, &[Register::CONFIGURATION, conf_u8[0]])?;
         self.delay.delay_ms(10);
         Ok(())
     }
 
     /// Read temperature and humidity
-    pub fn read(& mut self) -> Result<(f32, f32),Error<E>> {
+    pub fn read(& mut self) -> Result<(f32, f32), Error<E>> {
         let mut buf:[u8;4] = [0,0,0,0];
         let t_raw_u16:u16 ;
         let h_raw_u16:u16 ;
         let temper:f32;
         let humm:f32;
 
-        self.i2c.write(I2C_ADDRESS, &[Register::TEMPERATURE]).unwrap_or_default();
+        self.i2c.write(I2C_ADDRESS, &[Register::TEMPERATURE])
+            .map_err(|e| Error::IO(e))?;
         self.delay.delay_ms(20);
-        self.i2c.read(I2C_ADDRESS,&mut buf).unwrap_or_default();
+        self.i2c.read(I2C_ADDRESS,&mut buf)
+            .map_err(|e| Error::IO(e))?;
         t_raw_u16 = u16::from_be_bytes([buf[0], buf[1]]);
         temper = f32::from(t_raw_u16) / 65536.0 * 165.0 - 40.0;
 
@@ -161,7 +162,7 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
             h_raw_u16 = u16::from_be_bytes([buf[2], buf[3]]);
             humm = f32::from(h_raw_u16) / 65536.0 * 100.0;
         } else {
-            humm = self.humidity().unwrap_or_default();
+            humm = self.humidity()?;
         }
 
         Ok((temper, humm))
@@ -173,9 +174,11 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
         let result:u16 ;
         let temper:f32;
 
-        self.i2c.write(I2C_ADDRESS, &[Register::TEMPERATURE]).unwrap_or_default();
+        self.i2c.write(I2C_ADDRESS, &[Register::TEMPERATURE])
+            .map_err(|e| Error::IO(e))?;
         self.delay.delay_ms(20);
-        self.i2c.read(I2C_ADDRESS,&mut buf).unwrap_or_default();
+        self.i2c.read(I2C_ADDRESS,&mut buf)
+            .map_err(|e| Error::IO(e))?;
 
         result = u16::from_be_bytes(buf);
         temper = f32::from(result) / 65536.0 * 165.0 - 40.0;
@@ -188,9 +191,11 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
         let result:u16 ;
         let humid:f32;
 
-        self.i2c.write(I2C_ADDRESS, &[Register::HUMIDITY]).unwrap_or_default();
+        self.i2c.write(I2C_ADDRESS, &[Register::HUMIDITY])
+            .map_err(|e| Error::IO(e))?;
         self.delay.delay_ms(20);
-        self.i2c.read(I2C_ADDRESS,&mut buf).unwrap_or_default();
+        self.i2c.read(I2C_ADDRESS,&mut buf)
+            .map_err(|e| Error::IO(e))?;
 
         result = u16::from_be_bytes(buf);
         humid = f32::from(result) / 65536.0 * 100.0;
@@ -201,7 +206,8 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
     pub fn get_device_id(&mut self) -> Result<u16, Error<E>> {
         let mut buf:[u8;2] = [0,0];
         let result:u16 ;
-        self.i2c.write_read(I2C_ADDRESS, &[Register::DEVICE_ID],&mut buf).unwrap_or_default();
+        self.i2c.write_read(I2C_ADDRESS, &[Register::DEVICE_ID],&mut buf)
+            .map_err(|e| Error::IO(e))?;
         result = ((buf[0] as u16)<<8)|(buf[1] as u16);
         Ok(result)
     }
@@ -210,7 +216,8 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
     pub fn get_man_id(&mut self) -> Result<u16, Error<E>> {
         let mut buf = [0u8; 2];
         let result:u16 ;
-        self.i2c.write_read(I2C_ADDRESS, &[Register::MANUFACTURER],&mut buf).unwrap_or_default();
+        self.i2c.write_read(I2C_ADDRESS, &[Register::MANUFACTURER],&mut buf)
+            .map_err(|e| Error::IO(e))?;
         result = ((buf[0] as u16)<<8)|(buf[1] as u16);
         Ok(result)
     }
@@ -221,9 +228,12 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
         let mut buf2 = [0u8; 2];
         let mut buf3 = [0u8; 2];
         let mut result: [u16;3] = [0,0,0] ;
-        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID1], &mut buf1 ).unwrap_or_default();
-        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID2], &mut buf2 ).unwrap_or_default();
-        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID3], &mut buf3 ).unwrap_or_default();
+        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID1], &mut buf1 )
+            .map_err(|e| Error::IO(e))?;
+        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID2], &mut buf2 )
+            .map_err(|e| Error::IO(e))?;
+        self.i2c.write_read(I2C_ADDRESS,&[Register::SERIAL_ID3], &mut buf3 )
+            .map_err(|e| Error::IO(e))?;
         result[0] = u16::from_be_bytes(buf1);
         result[1] = u16::from_be_bytes(buf2);
         result[2] = u16::from_be_bytes(buf3);
@@ -232,7 +242,7 @@ impl<I2C, D, E> Hdc1080<I2C, D> where
 
     /// Returns true if battery voltage is under 2.8v
     pub fn battery_low(&mut self) -> Result<bool, E> {
-        let config = self.read_config().unwrap_or_default();
+        let config = self.read_config()?;
         Ok((config & ConfigBitFlags::BTST) == ConfigBitFlags::BTST)
     }
 
