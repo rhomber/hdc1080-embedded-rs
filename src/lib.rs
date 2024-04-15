@@ -1,9 +1,8 @@
 #![deny(unsafe_code)]
 #![no_std]
-use embedded_hal::blocking::{
-    delay::DelayMs,
-    i2c::{Write, WriteRead, Read},
-};
+
+use embedded_hal::delay::DelayNs;
+use embedded_hal::i2c::I2c;
 
 const I2C_ADDRESS: u8 = 0x40;
 
@@ -77,15 +76,15 @@ pub struct Hdc1080<I2C, D> {
 }
 
 impl<I2C, D, E> Hdc1080<I2C, D> where
-    I2C: WriteRead<Error = E> + Write<Error = E>+ Read<Error = E>,
-    D: DelayMs<u16>,
+    I2C: I2c<Error = E>,
+    D: DelayNs,
 {
     /// New HDC1080 device from an I2C peripheral.
     /// default: temperature 11-bit humidity 11-b
     pub fn new(i2c: I2C, delay: D ) -> Result<Self, Error<E>> {
         let dev = Self {
-            i2c: i2c,
-            delay: delay,
+            i2c,
+            delay,
             config:0x00|ConfigBitFlags::T_MODE|ConfigBitFlags::MODE| ConfigBitFlags::H_MODE8 & !ConfigBitFlags::H_MODE9
         };
 
